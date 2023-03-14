@@ -1,0 +1,47 @@
+qc: 5e-1
+ql: 1
+gamma: 10
+
+r1: 1e-5
+r2: 5e-3
+r3: 1e-3
+
+
+slack_constraint: 0.005
+track_savety_margin: 0.35
+
+Tf: 1
+N:  30
+T: 1800
+sref_N: 3
+s_offset: 0.5
+
+t_delay: 0.05
+MPC_freq: 40
+
+m: 3.54 #0.043
+C1: 0.472312704 # lr / (lr + lf)
+C2: 3.25732899 #1/(lr+lf)
+CSf: 4.718
+CSr: 5.4562
+Cr0: 0.01 # 0.011 rolling resistance init file
+Cr2: 0.0136 # drag force coeff from f110.init
+Cr3: 1.0
+Iz: 0.05797
+lr: 0.145
+lf: 0.162
+
+Bf: 4.47161357602916
+Cf: 0.1320293068694414
+Df: 12.267008918241816
+Br: 9.999999999999812
+Cr: 1.4999999999992566
+Dr: 1.3200250015860229
+
+Imax_c: 65
+Caccel: 7.135521073243542
+Cdecel: 5.935972263881579
+
+fixed_horizon: False
+use_pacejka_tiremodel: False
+slip_angle_approximation: True

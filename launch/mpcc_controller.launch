@@ -1,0 +1,7 @@
+<!-- -*- mode: XML -*- -->
+<launch>
+  <!-- Launch Acados MPC controller -->
+    <node pkg="mpcc_ros" type="mpcc_controller.py" name="mpcc_controller" output="screen"/>
+  <!-- Launch controller output node-->
+    <node pkg="mpcc_ros" type="controller_node.py" name="controller_node" output="screen"/>
+</launch>
