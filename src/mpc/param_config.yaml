@@ -17,13 +17,13 @@ sref_N: 3
 s_offset: 0.5
 
 t_delay: 0.05
-MPC_freq: 40
+MPC_freq: 20
 
 m: 3.54 #0.043
 C1: 0.472312704 # lr / (lr + lf)
 C2: 3.25732899 #1/(lr+lf)
-CSf: 4.718
-CSr: 5.4562
+Cm1: 7.135521073243542
+Cm2: 5.935972263881579
 Cr0: 0.01 # 0.011 rolling resistance init file
 Cr2: 0.0136 # drag force coeff from f110.init
 Cr3: 1.0
@@ -40,8 +40,3 @@ Dr: 1.3200250015860229
 
 Imax_c: 65
 Caccel: 7.135521073243542
-Cdecel: 5.935972263881579
-
-fixed_horizon: False
-use_pacejka_tiremodel: False
-slip_angle_approximation: True

@@ -106,8 +106,7 @@ def acados_settings(Ts, N, s0, kapparef, d_left, d_right, cfg_dict: dict):
     ocp.constraints.lbx = np.array(
         [
             model.n_min,
-            constraint.vx_min,
-            constraint.vy_min,
+            model.v_min,
             model.throttle_min,
             model.delta_min,
         ]
@@ -115,8 +114,7 @@ def acados_settings(Ts, N, s0, kapparef, d_left, d_right, cfg_dict: dict):
     ocp.constraints.ubx = np.array(
         [
             model.n_max,
-            constraint.vx_max,
-            constraint.vy_max,
+            model.v_max,
             model.throttle_max,
             model.delta_max,
         ]
@@ -124,8 +122,7 @@ def acados_settings(Ts, N, s0, kapparef, d_left, d_right, cfg_dict: dict):
     ocp.constraints.idxbx = np.array(
         [
             State.MIN_DIST_TO_CENTER_LINE_N,
-            State.VELOCITY_VX,
-            State.VELOCITY_VY,
+            State.VELOCITY_V,
             State.DUTY_CYCLE_D,
             State.STEERING_ANGLE_DELTA,
         ]
@@ -183,8 +180,8 @@ def get_parameters(cfg: dict) -> np.ndarray:
             cfg["m"],
             cfg["C1"],
             cfg["C2"],
-            cfg["CSf"],
-            cfg["CSr"],
+            cfg["Cm1"],
+            cfg["Cm2"],
             cfg["Cr0"],
             cfg["Cr2"],
             cfg["Cr3"],
@@ -199,7 +196,6 @@ def get_parameters(cfg: dict) -> np.ndarray:
             cfg["Dr"],
             cfg["Imax_c"],
             cfg["Caccel"],
-            cfg["Cdecel"],
             cfg["qc"],
             cfg["ql"],
             cfg["gamma"],

@@ -36,7 +36,7 @@
 import types
 
 import numpy as np
-from acados_template import MX, Function, cos, fmax, interpolant, mod, sin, vertcat
+from acados_template import MX, Function, cos, interpolant, mod, sin, vertcat
 from casadi import *
 
 
@@ -73,14 +73,12 @@ def bicycle_model(s0: list, kapparef: list, d_left: list, d_right: list, cfg_dic
     s = MX.sym("s")
     n = MX.sym("n")
     alpha = MX.sym("alpha")
-    vx = MX.sym("vx")
-    vy = MX.sym("vy")
-    omega = MX.sym("omega")
+    v = MX.sym("v")
     D = MX.sym("D")
     delta = MX.sym("delta")
     theta = MX.sym("theta")
 
-    x = vertcat(s, n, alpha, vx, vy, omega, D, delta, theta)
+    x = vertcat(s, n, alpha, v, D, delta, theta)
 
     # controls
     derD = MX.sym("derD")
@@ -95,19 +93,17 @@ def bicycle_model(s0: list, kapparef: list, d_left: list, d_right: list, cfg_dic
     sdot = MX.sym("sdot")
     ndot = MX.sym("ndot")
     alphadot = MX.sym("alphadot")
-    vxdot = MX.sym("vxdot")
-    vydot = MX.sym("vydot")
-    omegadot = MX.sym("omegadot")
+    vdot = MX.sym("vdot")
     Ddot = MX.sym("Ddot")
     deltadot = MX.sym("deltadot")
     thetadot = MX.sym("thetadot")
-    xdot = vertcat(sdot, ndot, alphadot, vxdot, vydot, omegadot, Ddot, deltadot, thetadot)
+    xdot = vertcat(sdot, ndot, alphadot, vdot, Ddot, deltadot, thetadot)
 
     m = MX.sym("m")
     C1 = MX.sym("C1")
     C2 = MX.sym("C2")
-    CSf = MX.sym("CSf")
-    CSr = MX.sym("CSr")
+    Cm1 = MX.sym("Cm1")
+    Cm2 = MX.sym("Cm2")
     Cr0 = MX.sym("Cr0")
     Cr2 = MX.sym("Cr2")
     Cr3 = MX.sym("Cr3")
@@ -122,7 +118,6 @@ def bicycle_model(s0: list, kapparef: list, d_left: list, d_right: list, cfg_dic
     Br = MX.sym("Br")
     Imax_c = MX.sym("Imax_c")
     Caccel = MX.sym("Caccel")
-    Cdecel = MX.sym("Deccel")
     qc = MX.sym("qc")
     ql = MX.sym("ql")
     gamma = MX.sym("gamma")
@@ -138,8 +133,8 @@ def bicycle_model(s0: list, kapparef: list, d_left: list, d_right: list, cfg_dic
         m,
         C1,
         C2,
-        CSf,
-        CSr,
+        Cm1,
+        Cm2,
         Cr0,
         Cr2,
         Cr3,
@@ -154,7 +149,6 @@ def bicycle_model(s0: list, kapparef: list, d_left: list, d_right: list, cfg_dic
         Dr,
         Imax_c,
         Caccel,
-        Cdecel,
         qc,
         ql,
         gamma,
@@ -164,6 +158,20 @@ def bicycle_model(s0: list, kapparef: list, d_left: list, d_right: list, cfg_dic
     )
 
     s_mod = mod(s, pathlength)
+
+    beta = atan2(lr, lr + lf) * tan(next_delta)
+    sdota = (v * cos(alpha + C1 * next_delta)) / (1 - kapparef_s(s_mod) * n)
+    f_expl = vertcat(
+        sdota,
+        v * sin(alpha + C1 * next_delta),
+        v / lr * sin(beta) - kapparef_s(s_mod) * sdota,
+        # v * C2 * next_delta - kapparef_s(s_mod) * sdota,
+        next_D * cos(C1 * next_delta),
+        derD,
+        derDelta,
+        derTheta,
+    )
+
 
     # constraint on forces
     a_lat = next_D * sin(C1 * next_delta)
@@ -200,67 +208,11 @@ def bicycle_model(s0: list, kapparef: list, d_left: list, d_right: list, cfg_dic
     constraint.along_min = -4  # maximum lateral force [m/s^2]
     constraint.along_max = 4  # maximum lateral force [m/s^2]
 
-    constraint.vx_min = 0
-    constraint.vx_max = 30
-
-    constraint.vy_min = -1
-    constraint.vy_max = 1
-
-    accel = Function("accel", [vx, D], [(Imax_c - Cr0 * vx) * D / (model.throttle_max * Caccel)])
-    decel = Function(
-        "decel", [vx, D], [(-Imax_c - Cr0 * vx) * fabs(D) / (model.throttle_max * Cdecel)]
-    )
-
-    # dynamics
-    sdota = (vx * cos(alpha) - vy * sin(alpha)) / (1 - kapparef_s(s) * n)
-
-    Fx = MX.sym("Fx")
-
-    Fx = if_else(D[0] >= 0, m * accel(vx, D), m * decel(vx, D))[0]
-    # Fx = m * next_D
-
-    vx = fmax(vx[0], 0.1)
-
-    # Carron
-
-    if cfg_dict["slip_angle_approximation"]:
-        beta = atan2(vy, vx)
-        ar = -beta + lr * omega / vx
-        af = delta - beta - lf * omega / vx
-
-    else:
-
-        af = -atan2(vy + lf * omega, vx) + next_delta
-        ar = -atan2(vy - lr * omega, vx)
-
-    Fr = CSr * ar
-    Ff = CSf * af
-
-    if cfg_dict["use_pacejka_tiremodel"]:
-        Fr = Dr * sin(Cr * atan(Br * ar))
-        Ff = Df * sin(Cf * atan(Bf * af))
-
-    f_expl = vertcat(
-        sdota,
-        vx * sin(alpha) + vy * cos(alpha),
-        omega,
-        1 / m * (Fx - Ff * sin(next_delta) + m * vy * omega),
-        1 / m * (Fr + Ff * cos(next_delta) - m * vx * omega),
-        1 / Iz * (Ff * lf * cos(next_delta) - Fr * lr),
-        derD,
-        derDelta,
-        derTheta,
-    )
-
-    # constraint on forces
-    a_lat = next_D * sin(C1 * next_delta)
-    a_long = next_D
-
-    n_outer_bound = outer_bound_s(s_mod) + n
-    n_inner_bound = inner_bound_s(s_mod) - n
+    model.v_min = 0
+    model.v_max = 30
 
     # Define initial conditions
-    model.x0 = np.array([-2, 0, 0, 0, 0, 0, 0, 0, 0])
+    model.x0 = np.array([-2, 0, 0, 0, 0, 0, 0])
 
     model.cost_expr_ext_cost = (
         ql * (s - theta) ** 2
@@ -281,16 +233,18 @@ def bicycle_model(s0: list, kapparef: list, d_left: list, d_right: list, cfg_dic
     constraint.pathlength = pathlength
     constraint.expr = vertcat(a_long, a_lat, n_inner_bound, n_outer_bound)
 
-    # f_expl_func = Function(
-    #     "f_expl_func", [s, n, alpha, vx, vy, D, omega, delta, theta, derD, derDelta, derTheta, Fx, p], [f_expl]
-    # )
+
+    f_expl_func = Function(
+        "f_expl_func", [s, n, alpha, v, D, delta, theta, derD, derDelta, derTheta, p], [f_expl]
+    )
+
 
     # Define model struct
     params = types.SimpleNamespace()
     params.C1 = C1
     params.C2 = C2
-    params.CSf = CSf
-    params.CSr = CSr
+    params.Cm1 = Cm1
+    params.Cm2 = Cm2
     params.Cr0 = Cr0
     params.Cr2 = Cr2
     model.f_impl_expr = xdot - f_expl
@@ -303,7 +257,7 @@ def bicycle_model(s0: list, kapparef: list, d_left: list, d_right: list, cfg_dic
     model.name = model_name
     model.params = params
     model.kappa = kapparef_s
-    # model.f_expl_func = f_expl_func
+    model.f_expl_func = f_expl_func
     model.outer_bound_s = outer_bound_s
     model.inner_bound_s = inner_bound_s
     return model, constraint, params

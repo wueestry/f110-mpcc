@@ -20,7 +20,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from mpc.acados_settings import acados_settings
 from plotting_fnc import plot_res
 from utils.frenet_cartesian_converter import convert_frenet_to_cartesian
-from utils.indecies import Input, Parameter, State
+from utils.indecies import Input, State
 from utils.splinify import SplineTrack
 
 
@@ -39,7 +39,6 @@ class MPC:
         )
         rospy.Subscriber("/vesc/sensors/imu/raw", Imu, self._imu_cb)
         rospy.Subscriber("/obstacles", ObstacleArray, self._obstacle_cb)
-        rospy.Subscriber("/tf_odom", Odometry, self._tf_odom_cb)
 
         self.pred_pos_pub = rospy.Publisher(
             "/mpc_controller/predicted_position", MarkerArray, queue_size=10
@@ -92,8 +91,6 @@ class MPC:
         self.sref_N = cfg["sref_N"]
         self.s_offset = cfg["s_offset"]
         self.track_savety_margin = cfg["track_savety_margin"]
-        self.slip_angle_approx = cfg["slip_angle_approximation"]
-        self.use_pacejka = cfg["use_pacejka_tiremodel"]
         t_delay = cfg["t_delay"]
         t_MPC = 1 / cfg["MPC_freq"]
 
@@ -116,7 +113,6 @@ class MPC:
 
     def _odom_cb(self, data: Odometry) -> None:
         self.vel_x = data.twist.twist.linear.x
-        self.omega = data.twist.twist.angular.z
 
     def _odom_frenet_cb(self, data: Odometry) -> None:
         self.pos_s = data.pose.pose.position.x
@@ -144,9 +140,6 @@ class MPC:
     def _obstacle_cb(self, data: ObstacleArray) -> None:
         self.obstacles = data.obstacles
 
-    def _tf_odom_cb(self, data: Odometry) -> None:
-        self.vel_y = data.twist.twist.linear.y
-
     def _transform_waypoints_to_coords(
         self, data: WpntArray
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -168,9 +161,7 @@ class MPC:
         s = x0[State.POS_ON_CENTER_LINE_S]
         n = x0[State.MIN_DIST_TO_CENTER_LINE_N]
         alpha = x0[State.ORIENTATION_ALPHA]
-        vx = max(0.1, x0[State.VELOCITY_VX])
-        vy = x0[State.VELOCITY_VY]
-        omega = x0[State.YAW_RATE_OMEGA]
+        v = x0[State.VELOCITY_V]
         D = x0[State.DUTY_CYCLE_D]
         delta = x0[State.STEERING_ANGLE_DELTA]
         theta = x0[State.PROGRESS_THETA]
@@ -179,56 +170,18 @@ class MPC:
         derDelta = x0[len(State) + Input.D_STEERING_ANGLE]
         derTheta = x0[len(State) + Input.D_PROGRESS]
 
-        m = self.model_params.p[Parameter.m]
-        Imax_c = self.model_params.p[Parameter.Imax_c]
-        Cr0 = self.model_params.p[Parameter.Cr0]
-        Caccel = self.model_params.p[Parameter.Caccel]
-        Cdecel = self.model_params.p[Parameter.Cdecel]
-        lr = self.model_params.p[Parameter.lr]
-        lf = self.model_params.p[Parameter.lf]
-        CSr = self.model_params.p[Parameter.CSr]
-        CSf = self.model_params.p[Parameter.CSf]
-        Dr = self.model_params.p[Parameter.Dr]
-        Df = self.model_params.p[Parameter.Df]
-        Cr = self.model_params.p[Parameter.Cr]
-        Cf = self.model_params.p[Parameter.Cf]
-        Br = self.model_params.p[Parameter.Br]
-        Bf = self.model_params.p[Parameter.Bf]
-        Iz = self.model_params.p[Parameter.Iz]
-
-        def accel(vx: float, D: float) -> float:
-            return m * (Imax_c - Cr0 * vx) * D / (self.model.throttle_max * Caccel)
-
-        def decel(vx: float, D: float) -> float:
-            return m * (-Imax_c - Cr0 * vx) * abs(D) / (self.model.throttle_max * Cdecel)
-
-        Fx = accel(vx, D) if D >= 0 else decel(vx, D)
-
-        if self.slip_angle_approx:
-            beta = np.arctan2(vy, vx)
-            ar = -beta + lr * omega / vx
-            af = delta - beta - lf * omega / vx
-        else:
-            af = -np.arctan2(vy + lf * omega, vx) + delta
-            ar = -np.arctan2(vy - lr * omega, vx)
-
-        Fr = CSr * ar
-        Ff = CSf * af
-
-        if self.use_pacejka:
-            Fr = Dr * np.sin(Cr * np.arctan(Br * ar))
-            Ff = Df * np.sin(Cf * np.arctan(Bf * af))
+        xdot = self.model.f_expl_func(
+            s, n, alpha, v, D, delta, theta, derD, derDelta, derTheta, self.model_params.p
+        )
 
         xdot = [
-            (vx * np.cos(alpha) - vy * np.sin(alpha)) / (1 - float(self.model.kappa(s)) * n),
-            vx * np.sin(alpha) + vy * np.cos(alpha),
-            omega,
-            1 / m * (Fx - Ff * np.sin(delta) + m * vy * omega),
-            1 / m * (Fr + Ff * np.cos(delta) - m * vx * omega),
-            1 / Iz * (Ff * lf * np.cos(delta) - Fr * lr),
-            derD,
-            derDelta,
-            derTheta,
+            float(xdot[State.POS_ON_CENTER_LINE_S]),
+            float(xdot[State.MIN_DIST_TO_CENTER_LINE_N]),
+            float(xdot[State.ORIENTATION_ALPHA]),
+            float(xdot[State.VELOCITY_V]),
+            float(xdot[State.DUTY_CYCLE_D]),
+            float(xdot[State.STEERING_ANGLE_DELTA]),
+            float(xdot[State.PROGRESS_THETA]),
             derD,
             derDelta,
             derTheta,
@@ -539,17 +492,7 @@ class MPC:
         current_pos_s = self.pos_s + self.nr_laps * self.spline.track_length
 
         return np.array(
-            [
-                current_pos_s,
-                self.pos_n,
-                alpha,
-                self.vel_x,
-                self.vel_y,
-                duty_cicle,
-                self.omega,
-                delta,
-                current_pos_s,
-            ]
+            [current_pos_s, self.pos_n, alpha, self.vel_x, duty_cicle, delta, current_pos_s]
         )
 
     def publish_current_pos(self, coord: np.array) -> None:
@@ -643,7 +586,7 @@ class MPC:
 
         ack_msg.drive.steering_angle = state[State.STEERING_ANGLE_DELTA]
         # ack_msg.drive.steering_angle = -self.u0[-1]*0.16
-        ack_msg.drive.speed = state[State.VELOCITY_VX]
+        ack_msg.drive.speed = state[State.VELOCITY_V]
         # print(f"Commanded steering angle: {ack_msg.drive.steering_angle}")
 
         # rospy.logdebug(f"Publish ackermann msg: {ack_msg.drive.speed}, {ack_msg.drive.steering_angle}")
