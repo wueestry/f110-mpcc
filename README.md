@@ -1,6 +1,8 @@
 This repository creates a model predictive contouring controller to use on a f110th racestack.
 
 <img src="https://github.com/wueestry/f110_mpcc/blob/main/docs/MPC_sim.gif" width="700" />
+
+
 Taken from `alexliniger/MPCC`
 
 The main branch is using a pacejka tire model to simulate the cars behaviour, while the additional branch `simplified_tire_model` uses a simpler, path-parametric tire model
