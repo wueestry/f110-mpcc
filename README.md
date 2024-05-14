@@ -14,4 +14,4 @@ The main branch is using a pacejka tire model to simulate the cars behaviour, wh
 - start mpcc node by running `roslaunch mpcc_ros mpcc_controller.launch`
 
 # Obstacle Avoidance Demo
-see `docs/obstacle_avoidance.mp4` for a demo video
+<img src="https://github.com/wueestry/f110_mpcc/blob/main/docs/obstacle_avoidance.gif" width="700" />
